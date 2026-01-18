@@ -1,0 +1,268 @@
+#!/usr/bin/bash
+
+declare current=()
+declare prev=()
+
+below_20_color=$'\e[38;5;42m'
+below_40_color=$'\e[38;5;119m'
+below_60_color=$'\e[38;5;227m'
+below_80_color=$'\e[38;5;208m'
+below_100_color=$'\e[38;5;196m'
+perc_color=$'\e[38;5;39m'
+cpu_color=$'\e[38;5;199m'
+reset_color=$'\e[0m'
+dim_color=$'\e[2m'
+bold_color=$'\e[1m'
+color1=$'\e[38;5;34m'
+
+num_cpus=0
+copy-data(){
+	prev=()
+
+	local key value
+
+	for key in "${!current[@]}"; do 
+		value=${current[$key]}
+		prev[$key]=$value
+	done
+}
+read-proc(){
+	local cpu user nice system idle iowait irq softirq steal guest guest_nice
+	local busy # NO NEED FOR IDLE TIME VAR, REUSED idle
+
+
+	while read -r cpu user nice system idle iowait irq softirq steal guest guest_nice; do
+		
+		if [[ $cpu != cpu* ]]; then
+			break
+		elif [[ $cpu == cpu ]];then
+			continue
+		fi
+
+		local num=${cpu#cpu}
+		busy=$((user + nice + system + irq + softirq + steal + guest + guest_nice))
+		# echo "[DEBUG]: idle : $idle iowait: $iowait"
+		idle=$((idle + iowait))
+		#echo "[DEBUG]: idle : $idle"
+		
+		local value="$busy $idle"	
+		current[$num]=$value	
+
+	done < /proc/stat
+}
+init_cpu(){
+	local cpu val
+	while read -r cpu val; do
+		if [[ $cpu != cpu* ]]; then
+			break
+		elif [[ $cpu == cpu ]];then
+			continue
+		fi
+
+		((num_cpus++))
+	done < /proc/stat
+}
+
+
+print-bar(){
+	local bar="|"
+	local empty="."	
+	local key=$1
+	local core_offset=$2
+		
+	local busy1 idle1 busy2 idle2
+	read -r busy1 idle1 <<< "${prev[$key]}"
+	read -r busy2 idle2 <<< "${current[$key]}"
+
+	local busy=$((busy2-busy1))
+	local idle=$((idle2-idle1))
+
+	local total=$((busy + idle))
+
+	local usage=$((1000*busy/total))
+
+	local integer=$((usage/10))
+	local float=$((usage%10))
+	local term_size
+
+
+	term_size=$(stty size </dev/tty 2>&1) || return
+
+	local term_lines=${term_size%% *}
+	local term_cols=${term_size##* }
+	
+	local length=$((term_cols-14)) #[] and 100 and % + for cpu and .0 and 2 spaces
+	if (($num_cpus>9)); then
+		((length--))
+	fi
+	local num_bars=$((usage * length/ 1000))
+	local s='['
+	local i=0
+
+
+	local color_choosen
+
+	if (( $integer<20 )); then
+		color_choosen=$below_20_color
+	elif (( $integer<40)); then
+		color_choosen=$below_40_color
+	elif (( $integer<60)); then
+		color_choosen=$below_60_color
+	elif (( $integer<80)); then
+		color_choosen=$below_80_color
+	else
+		color_choosen=$below_100_color
+	fi
+	for(( i=0;i<num_bars;i++)); do
+		s+=$bar
+	done
+
+	for(( i=$num_bars;i<$length;i++)); do
+		s+=$empty
+	done
+	s+="]"	
+	printf -v s "%s%s%s " "$color_choosen" "$s" "$reset_color"
+
+	printf -v perc '%s%d.%d%%%s' "$perc_color" "$integer" "$float" "$reset_color"
+	s+="$perc"
+	printf -v key '%scpu%d%s' "$cpu_color" "$key" "$reset_color"
+
+	{
+	#Save Cursor Locn
+	printf '\e7'
+
+	#Move Cursor to bottom
+	printf '\e[%d;%dH' "$((LINES-num_cpus+core_offset))" 0
+
+	#Clear the Line
+	printf '\e[0K'
+
+	#Print the progress
+	printf "%s %s" "$key" "$s">&2
+	
+	#Reset Cursor
+	printf '\e8'
+
+	#reset colour of terminal
+	printf '\e[0m'	
+	} >/dev/tty 2>&1
+}
+init_term(){
+	
+	local term_size
+	term_size=$(stty size </dev/tty 2>&1) || return
+	local term_lines=${term_size%% *}
+	
+	{
+		
+	#enable alt buffer
+	printf '\e[?1049h'
+	#hide cursor
+	printf '\e[?25l'
+	#Move the cursor back home
+	printf '\e[H'
+
+	
+	#MAKE SPACE FOR BARS
+	local i
+	for ((i=0; i<num_cpus; i++)); do
+		printf '\n'
+	done
+	
+	#MOVE CURSOR BACK UP to PREVENT CTRL C err
+	printf '\e[%dA' "$num_cpus"
+
+	#save cursor locn
+	printf '\e7'
+	
+	
+	#set scrollable region --> syntax \e[(top);(bottom)r
+	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus - 1))"
+	
+	#restore cursor location
+	printf '\e8'
+	
+	} >/dev/tty 2>&1
+}
+deinit_term(){
+	local term_size
+	term_size=$(stty size </dev/tty 2>&1) || return
+	local term_lines=${term_size%% *}
+	
+	{
+	
+	#save the cursor Locn
+	printf '\e7'
+	for ((i=0;i<num_cpus;i++)); do
+		printf '\e[%d;%dH' "$((term_lines-num_cpus+i))" 0
+		printf '\e[0K'
+	done
+
+	#RESET SCROLLABLE
+	printf '\e[%d;%dr' 0 "$term_lines"
+
+	
+	#Reset the cursor Locn
+	printf '\e8'
+	
+
+	#Make cursor visible
+	printf '\e[?25h'
+
+	#disable Alternate buffer
+	printf '\e[?1049l'	
+
+
+	} >/dev/tty 2>&1
+}
+visualise-data(){
+	local key
+	local core_num=0
+
+	#move to the top
+	printf '\e[0;0H'	
+
+	local now
+	printf -v now '%(DATE: %Y-%m-%d \t TIME: %H:%M:%S%z)T'
+
+	echo -e  "${dim_color}CPU USAGE ON ${color1}$HOSTNAME ${reset_color}\t ${dim_color}$now ${reset_color}" 
+	for key in "${!current[@]}"; do
+		print-bar "$key" "$core_num"
+		((core_num++))
+	done	
+}
+main(){
+	read-proc
+	init_cpu
+	local sleep_delay
+	echo "${bold_color}[DEBUG:] Waiting for Data${reset_color}" >&2
+	local OPTIND OPTARG opt
+
+
+	while getopts 's:' opt; do
+		case "$opt" in
+			s) sleep_delay=$OPTARG;;
+		esac
+	done
+	shopt -s checkwinsize
+	#TO ENSURE LINES AND COLUMNS ARE SET
+	(:)
+	
+	echo "${bold_color}[DEBUG:] Waiting for Data (monitoring $num_cpus cores)${reset_color}" >&2
+	sleep $sleep_delay 
+	trap deinit_term exit
+	trap init_term WINCH
+	init_term
+	
+
+	while true; do	
+		copy-data
+		read-proc
+		visualise-data
+		sleep $sleep_delay 
+	done
+	
+	
+}
+
+main $@
