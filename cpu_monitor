@@ -1,7 +1,8 @@
 #!/usr/bin/bash
 
-declare current=()
-declare prev=()
+declare cpu_current=()
+declare cpu_prev=()
+declare -A mem_values=()
 
 below_20_color=$'\e[38;5;42m'
 below_40_color=$'\e[38;5;119m'
@@ -17,16 +18,43 @@ color1=$'\e[38;5;34m'
 
 num_cpus=0
 copy-data(){
-	prev=()
+	cpu_prev=()
 
 	local key value
 
-	for key in "${!current[@]}"; do 
-		value=${current[$key]}
-		prev[$key]=$value
+	for key in "${!cpu_current[@]}"; do 
+		value=${cpu_current[$key]}
+		cpu_prev[$key]=$value
 	done
 }
-read-proc(){
+
+read-mem(){
+	local total free avail_for_app buffers cache swap_cached 
+	local key value_raw value rest
+	while IFS=: read -r key value_raw; do 
+		read -r value rest <<< "$value_raw"
+		case $key in
+			MemTotal) mem_values["total"]=$value;;
+			MemFree) mem_values["free"]=$value;;
+			MemAvailable) mem_values["avail_for_app"]=$value;;
+			Cached) mem_values["cache"]=$value;;
+
+
+			SwapTotal) mem_values["swap_total"]=$value;;
+			SwapFree) mem_values["swap_free"]=$value;;
+			SwapCached) mem_values["swap_cached"]=$value;;
+		esac
+	done < /proc/meminfo
+	declare -p mem_values
+	echo -e "\n\n\n"
+	echo -e "mem stats..\ntotal:${mem_values["total"]}\nallocated:$(( mem_values["total"]-mem_values["avail_for_app"] ))\nfree:${mem_values["avail_for_app"]}\navailable_for_applications:${mem_values["free"]}\ncached:${mem_values["cache"]}"
+	echo -e "\n\n\n"
+	echo -e "disk stats..\ntotal:${mem_values["swap_total"]}\nallocated:$((mem_values["(swap_total"]-mem_values["swap_free"]))\nfree:${mem_values["swap_free"]}\ncached:${mem_values["swap_cached"]}"
+	echo -e "\n\n\n"
+
+}
+
+read-cpu(){
 	local cpu user nice system idle iowait irq softirq steal guest guest_nice
 	local busy # NO NEED FOR IDLE TIME VAR, REUSED idle
 
@@ -46,7 +74,7 @@ read-proc(){
 		#echo "[DEBUG]: idle : $idle"
 		
 		local value="$busy $idle"	
-		current[$num]=$value	
+		cpu_current[$num]=$value	
 
 	done < /proc/stat
 }
@@ -71,8 +99,8 @@ print-bar(){
 	local core_offset=$2
 		
 	local busy1 idle1 busy2 idle2
-	read -r busy1 idle1 <<< "${prev[$key]}"
-	read -r busy2 idle2 <<< "${current[$key]}"
+	read -r busy1 idle1 <<< "${cpu_prev[$key]}"
+	read -r busy2 idle2 <<< "${cpu_current[$key]}"
 
 	local busy=$((busy2-busy1))
 	local idle=$((idle2-idle1))
@@ -226,13 +254,15 @@ visualise-data(){
 	printf -v now '%(DATE: %Y-%m-%d \t TIME: %H:%M:%S%z)T'
 
 	echo -e  "${dim_color}CPU USAGE ON ${color1}$HOSTNAME ${reset_color}\t ${dim_color}$now ${reset_color}" 
-	for key in "${!current[@]}"; do
+	for key in "${!cpu_current[@]}"; do
 		print-bar "$key" "$core_num"
 		((core_num++))
 	done	
 }
 main(){
-	read-proc
+	read-mem
+	exit
+	read-cpu
 	init_cpu
 	local sleep_delay
 	echo "${bold_color}[DEBUG:] Waiting for Data${reset_color}" >&2
@@ -257,7 +287,7 @@ main(){
 
 	while true; do	
 		copy-data
-		read-proc
+		read-cpu
 		visualise-data
 		sleep $sleep_delay 
 	done
