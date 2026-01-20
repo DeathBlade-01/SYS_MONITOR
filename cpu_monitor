@@ -4,6 +4,10 @@ declare cpu_current=()
 declare cpu_prev=()
 declare -A mem_values=()
 
+
+bar="|"
+empty="."	
+
 below_20_color=$'\e[38;5;42m'
 below_40_color=$'\e[38;5;119m'
 below_60_color=$'\e[38;5;227m'
@@ -17,6 +21,7 @@ bold_color=$'\e[1m'
 color1=$'\e[38;5;34m'
 
 num_cpus=0
+
 copy-data(){
 	cpu_prev=()
 
@@ -45,13 +50,7 @@ read-mem(){
 			SwapCached) mem_values["swap_cached"]=$value;;
 		esac
 	done < /proc/meminfo
-	declare -p mem_values
-	echo -e "\n\n\n"
-	echo -e "mem stats..\ntotal:${mem_values["total"]}\nallocated:$(( mem_values["total"]-mem_values["avail_for_app"] ))\nfree:${mem_values["avail_for_app"]}\navailable_for_applications:${mem_values["free"]}\ncached:${mem_values["cache"]}"
-	echo -e "\n\n\n"
-	echo -e "disk stats..\ntotal:${mem_values["swap_total"]}\nallocated:$((mem_values["(swap_total"]-mem_values["swap_free"]))\nfree:${mem_values["swap_free"]}\ncached:${mem_values["swap_cached"]}"
-	echo -e "\n\n\n"
-
+	#declare -p mem_values
 }
 
 read-cpu(){
@@ -93,8 +92,7 @@ init_cpu(){
 
 
 print-bar(){
-	local bar="|"
-	local empty="."	
+	
 	local key=$1
 	local core_offset=$2
 		
@@ -193,19 +191,19 @@ init_term(){
 	
 	#MAKE SPACE FOR BARS
 	local i
-	for ((i=0; i<num_cpus; i++)); do
+	for ((i=0; i<num_cpus + 6; i++)); do
 		printf '\n'
 	done
 	
 	#MOVE CURSOR BACK UP to PREVENT CTRL C err
-	printf '\e[%dA' "$num_cpus"
+	printf '\e[%dA' "$((num_cpus+4))"
 
 	#save cursor locn
 	printf '\e7'
 	
 	
 	#set scrollable region --> syntax \e[(top);(bottom)r
-	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus - 1))"
+	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus-6 - 1))"
 	
 	#restore cursor location
 	printf '\e8'
@@ -221,8 +219,8 @@ deinit_term(){
 	
 	#save the cursor Locn
 	printf '\e7'
-	for ((i=0;i<num_cpus;i++)); do
-		printf '\e[%d;%dH' "$((term_lines-num_cpus+i))" 0
+	for ((i=0;i<num_cpus+6;i++)); do
+		printf '\e[%d;%dH' "$((term_lines-num_cpus-6+i))" 0
 		printf '\e[0K'
 	done
 
@@ -254,14 +252,156 @@ visualise-data(){
 	printf -v now '%(DATE: %Y-%m-%d \t TIME: %H:%M:%S%z)T'
 
 	echo -e  "${dim_color}CPU USAGE ON ${color1}$HOSTNAME ${reset_color}\t ${dim_color}$now ${reset_color}" 
+	visualise-mem
 	for key in "${!cpu_current[@]}"; do
 		print-bar "$key" "$core_num"
 		((core_num++))
 	done	
 }
+visualise-mem(){
+		
+	local perc
+
+	local available_memory=$((mem_values["avail_for_app"]))
+	local total_memory=$((mem_values["total"]))
+	local usage=$((1000*available_memory/total_memory))
+
+	local integer=$((usage/10))
+	local float=$((usage%10))
+	local term_size
+
+
+	term_size=$(stty size </dev/tty 2>&1) || return
+
+	local term_lines=${term_size%% *}
+	local term_cols=${term_size##* }
+	
+	local length=$((term_cols-20)) #[] and 100 and % + for cpu and .0 and 2 spaces
+	local num_bars=$((usage * length/ 1000))
+	local bar1='['
+	local i=0
+
+
+	local color_choosen
+
+	if (( $integer<20 )); then
+		color_choosen=$below_20_color
+	elif (( $integer<40)); then
+		color_choosen=$below_40_color
+	elif (( $integer<60)); then
+		color_choosen=$below_60_color
+	elif (( $integer<80)); then
+		color_choosen=$below_80_color
+	else
+		color_choosen=$below_100_color
+	fi
+	for(( i=0;i<num_bars;i++)); do
+		bar1+=$bar
+	done
+
+	for(( i=$num_bars;i<$length;i++)); do
+		bar1+=$empty
+	done
+	bar1+="]"	
+	printf -v bar1 "%s%s%s " "$color_choosen" "$bar1" "$reset_color"
+
+	printf -v perc '%s%d.%d%%%s' "$perc_color" "$integer" "$float" "$reset_color"
+	bar1+="$perc"
+	local key1
+
+
+	printf -v key1 '%sAvailable%s' "$cpu_color" "$reset_color"
+
+
+
+
+	available_memory=$((mem_values["avail_for_app"]-mem_values["free"]))
+	total_memory=$((mem_values["avail_for_app"]))
+	usage=$((1000*available_memory/total_memory))
+	mem_values["used"]=$((mem_values["total"] - mem_values["avail_for_app"]))
+
+
+	integer=$((100-(usage/10)))
+	float=$((10-(usage%10)))
+	
+	num_bars=$((usage * length/ 1000))
+	local bar2='['
+	i=0
+
+
+	
+
+	if (( $integer<20 )); then
+		color_choosen=$below_100_color
+	elif (( $integer<40)); then
+		color_choosen=$below_80_color
+	elif (( $integer<60)); then
+		color_choosen=$below_60_color
+	elif (( $integer<80)); then
+		color_choosen=$below_40_color
+	else
+		color_choosen=$below_20_color
+	fi
+	for(( i=0;i<num_bars;i++)); do
+		bar2+=$bar
+	done
+
+	for(( i=$num_bars;i<$length;i++)); do
+		bar2+=$empty
+	done
+	bar2+="]"	
+	printf -v bar2 "%s%s%s " "$color_choosen" "$bar2" "$reset_color"
+
+	printf -v perc '%s%d.%d%%%s' "$perc_color" "$integer" "$float" "$reset_color"
+	bar2+="$perc"
+	local key2
+
+
+	printf -v key2 '%sFree     %s' "$cpu_color" "$reset_color"
+
+
+	{
+	#Save Cursor Locn
+	printf '\e7'
+
+	#Move Cursor to bottom
+	printf '\e[%d;%dH' "$((LINES-num_cpus-6))" 0
+
+	#Clear the Line
+	printf '\e[0K'
+
+	#Print the progress
+	printf "%s %s\n" "$key1" "$bar1">&2
+	printf "%s %s" "$key2" "$bar2">&2
+
+	#PRINT STATS
+	local gigs=$((mem_values["total"]/1000000))
+	local megs=$(( ( (mem_values["total"]/1000 )% 1000) /10 ))
+	echo	
+	printf "\n%sTotal:     %s%d.%dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color" 
+
+	gigs=$((mem_values["used"]/1000000))
+	megs=$(( ( (mem_values["used"]/1000 )% 1000) /10 ))
+	printf "\t%sUsed: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+
+	gigs=$((mem_values["avail_for_app"]/1000000))
+	megs=$(( ( (mem_values["avail_for_app"]/1000 )% 1000) /10 ))
+	printf "\n%sAvailable: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
+
+	gigs=$((mem_values["free"]/1000000))
+	megs=$(( ( (mem_values["free"]/1000 )% 1000) /10 ))
+	printf "\t%sFree: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	
+	#Reset Cursor
+	printf '\e8'
+
+	#reset colour of terminal
+	printf '\e[0m'	
+	} >/dev/tty 2>&1
+
+}
 main(){
 	read-mem
-	exit
 	read-cpu
 	init_cpu
 	local sleep_delay
@@ -288,6 +428,7 @@ main(){
 	while true; do	
 		copy-data
 		read-cpu
+		read-mem
 		visualise-data
 		sleep $sleep_delay 
 	done
