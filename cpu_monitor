@@ -20,9 +20,12 @@ dim_color=$'\e[2m'
 bold_color=$'\e[1m'
 color1=$'\e[38;5;34m'
 
-title_color_1=$'\e[48;5;24m'
-title_color_2=$'\e[48;5;30m'
-title_color_3=$'\e[48;5;177m'
+background_color_1=$'\e[48;5;24m'
+background_color_2=$'\e[48;5;114m'
+background_color_3=$'\e[48;5;177m'
+
+foreground_color_1=$'\e[38;5;232m'
+
 
 num_cpus=0
 
@@ -56,7 +59,7 @@ read-mem(){
 	done < /proc/meminfo
 	#declare -p mem_values
 }
-
+#TODO: ADD cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq for cpu_freq
 read-cpu(){
 	local cpu user nice system idle iowait irq softirq steal guest guest_nice
 	local busy # NO NEED FOR IDLE TIME VAR, REUSED idle
@@ -162,7 +165,7 @@ print-bar(){
 	printf '\e7'
 
 	#Move Cursor to bottom
-	printf '\e[%d;%dH' "$((LINES-num_cpus+core_offset))" 0
+	printf '\e[%d;%dH' "$((LINES-num_cpus+core_offset+1))" 0 #TO COUNTERACT ZERO NUMBERING
 
 	#Clear the Line
 	printf '\e[0K'
@@ -193,21 +196,15 @@ init_term(){
 	printf '\e[H'
 
 	
-	#MAKE SPACE FOR BARS
-	local i
-	for ((i=0; i<num_cpus + 6; i++)); do
-		printf '\n'
-	done
-	
 	#MOVE CURSOR BACK UP to PREVENT CTRL C err
-	printf '\e[%dA' "$((num_cpus+4))"
+	#printf '\e[%dA' "$((num_cpus+4))"
 
 	#save cursor locn
 	printf '\e7'
 	
 	
 	#set scrollable region --> syntax \e[(top);(bottom)r
-	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus-6 - 1))"
+	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus-8))" #FOR THE LITTLE SPACE AT THE BOTTOM
 	
 	#restore cursor location
 	printf '\e8'
@@ -337,7 +334,7 @@ visualise-mem(){
 	printf '\e7'
 
 	#Move Cursor to bottom
-	printf '\e[%d;%dH' "$((LINES-num_cpus-6))" 0
+	printf '\e[%d;%dH' "$((LINES-num_cpus-7))" 0 #EDIT SPACE AFTER RAM HERE
 
 	#Clear the Line
 	printf '\e[0K'
@@ -362,8 +359,12 @@ visualise-mem(){
 
 	gigs=$((mem_values["free"]/1000000))
 	megs=$(( ( (mem_values["free"]/1000 )% 1000) /10 ))
-	printf "\t%sFree: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	printf "\t%sFree: %s%d.%dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
 	
+	local cpu_name=$(awk -F : '/model name/{print $2; exit}' /proc/cpuinfo | sed 's/^ *//' | sed 's/CPU //')
+	echo $s
+
+	print-title "CPU STATS: $cpu_name" "$foreground_color_1" "$background_color_1"	
 	#Reset Cursor
 	printf '\e8'
 
@@ -396,7 +397,7 @@ visualise-mem-2(){
 	local bar1='['
 	local i=0
 
-
+	
 	local color_choosen
 
 	if (( $integer<20 )); then
@@ -516,30 +517,34 @@ visualise-mem-2(){
 
 }
 print-title(){
+	local bg_color=$3
+	local font_color=$2
 	#MOVE CURSOR BACK TO FIRST COL
-	printf '\e[0G'
+	printf '\e[1G'
 	
 
 	#CHANGE BG COLOR
-	printf "%s" $title_color_2
+	printf "%s" $bg_color
 
 	#GO TO END OF LINE WITH SPACES
 	printf '\e[0K'
 	
 	#CHANGE FG COLOR
-
+	printf "%s" $font_color
+	
 	#PRINT THE TITLE
-
-	printf "HELLO%s" $1
-
-	#GO BACK TO FIRST COL
-	printf '\e[50G'
-
+	printf "%s" "$1" #ALWAYS QUOTE IT TO AVOID INTELi37020U ERROR1
+	
 	#RESET FORMAT
 	printf "%s" $reset_color
+
+	#MOVE CURSOR DOWN
+	printf '\n'
+
+
 }
 main(){
-	print-title "HELLO TERMINAL"
+	print-title "TERMINAL" $foreground_color_1 $background_color_1
 	read-mem
 	read-cpu
 	init_cpu
