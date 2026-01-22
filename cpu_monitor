@@ -204,7 +204,7 @@ init_term(){
 	
 	
 	#set scrollable region --> syntax \e[(top);(bottom)r
-	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus-8))" #FOR THE LITTLE SPACE AT THE BOTTOM
+	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus-11-8))" # 3 FOR CPU HEADER 3 FOR MEM STATS 2 FOR MEM-BARS 3 FOR MEM HEADER
 	
 	#restore cursor location
 	printf '\e8'
@@ -253,12 +253,15 @@ visualise-data(){
 	printf -v now '%(DATE: %Y-%m-%d \t TIME: %H:%M:%S%z)T'
 
 	echo -e  "${dim_color}CPU USAGE ON ${color1}$HOSTNAME ${reset_color}\t ${dim_color}$now ${reset_color}" 
+	
 	visualise-mem
+	visualise-cache
 	for key in "${!cpu_current[@]}"; do
 		print-bar "$key" "$core_num"
 		((core_num++))
 	done	
 }
+# INPUT 20 FOR MEM STATS, and X for SWAP STATS
 print-mem(){
 	local perc
 
@@ -276,7 +279,7 @@ print-mem(){
 	local term_lines=${term_size%% *}
 	local term_cols=${term_size##* }
 	
-	local length=$((term_cols-20)) #[] and 100 and % + for cpu and .0 and 2 spaces
+	local length=$((term_cols-$3)) #[] and 100 and % + for cpu and .0 and 2 spaces
 	local num_bars=$((usage * length/ 1000))
 	local s='['
 	local i=0
@@ -309,12 +312,70 @@ print-mem(){
 	s+="$perc"
 	echo "$s"
 }
+visualise-cache(){
+	
+	local available_memory=$((mem_values["swap_free"]))
+	local total_memory=$((mem_values["swap_total"]))
+	local key1 bar1 key2 bar2
+	
+	bar1="$(print-mem $available_memory $total_memory 24)"
+	printf -v key1 '%sAvailable Swap%s' "$cpu_color" "$reset_color"
+	mem_values["swap_used"]=$((mem_values["swap_total"] - mem_values["swap_free"]))
+
+	{
+	#Save Cursor Locn
+	printf '\e7'
+
+	#Move Cursor to bottom
+	printf '\e[%d;%dH' "$((LINES-num_cpus-9-7))" 0 # 7 for CPU INFO + BUFFER(1) + BOTTOM LINE
+
+	#Clear the Line
+	printf '\e[0K'
+	
+	#PRINT THE TITLE
+	print-title "SWAP STATS" "$foreground_color_1" "$background_color_1"
+	printf '\n'
+	#echo 
+
+	#Print the progress
+	printf "%s %s" "$key1" "$bar1">&2
+
+	#PRINT STATS
+	local gigs=$((mem_values["swap_total"]/1000000))
+	local megs=$(( ( (mem_values["swap_total"]/1000 )% 1000) /10 ))
+	echo	
+	printf "\n%sTotal: %s%3d.%02dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color" 
+
+	gigs=$((mem_values["swap_used"]/1000000))
+	megs=$(( ( (mem_values["swap_used"]/1000 )% 1000) /10 ))
+	printf "\t\t%sUsed: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+
+	gigs=$((mem_values["swap_cached"]/1000))
+	megs=$(( ( (mem_values["swap_cached"])% 1000)/10 ))
+	printf "\n%sCached: %s%3d.%02dM%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
+
+	gigs=$((mem_values["swap_free"]/1000000))
+	megs=$(( ( (mem_values["swap_free"]/1000 )% 1000) /10 ))
+	printf "\t\t%sFree: %s%3d.%02dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	
+	echo $s
+
+	#Reset Cursor
+	printf '\e8'
+
+	#reset colour of terminal
+	printf '\e[0m'	
+	} >/dev/tty 2>&1
+
+
+}
 visualise-mem(){
 	
 	local available_memory=$((mem_values["avail_for_app"]))
 	local total_memory=$((mem_values["total"]))
 	local key1 bar1 key2 bar2
-	bar1="$(print-mem $available_memory $total_memory)"
+	
+	bar1="$(print-mem $available_memory $total_memory 19)"
 	printf -v key1 '%sAvailable%s' "$cpu_color" "$reset_color"
 
 
@@ -324,20 +385,28 @@ visualise-mem(){
 	total_memory=$((mem_values["avail_for_app"]))
 	mem_values["used"]=$((mem_values["total"] - mem_values["avail_for_app"]))
 
-	bar2="$(print-mem $available_memory $total_memory)"
+	bar2="$(print-mem $available_memory $total_memory 19)"
 
 	printf -v key2 '%sFree     %s' "$cpu_color" "$reset_color"
 
-
+	# OBTAIN RAM INFO
+	local line ram_speed
+	mapfile -t line < RAM_INFO || exit
+	ram_speed="${line[0]}"
 	{
 	#Save Cursor Locn
 	printf '\e7'
 
 	#Move Cursor to bottom
-	printf '\e[%d;%dH' "$((LINES-num_cpus-7))" 0 #EDIT SPACE AFTER RAM HERE
+	printf '\e[%d;%dH' "$((LINES-num_cpus-9))" 0 # 7 for CPU INFO + BUFFER(1) + BOTTOM LINE
 
 	#Clear the Line
 	printf '\e[0K'
+	
+	#PRINT THE TITLE
+	print-title "MEM STATS: CLOCK SPEED: ${ram_speed}" "$foreground_color_1" "$background_color_1"
+	printf '\n'
+	#echo 
 
 	#Print the progress
 	printf "%s %s\n" "$key1" "$bar1">&2
@@ -347,19 +416,19 @@ visualise-mem(){
 	local gigs=$((mem_values["total"]/1000000))
 	local megs=$(( ( (mem_values["total"]/1000 )% 1000) /10 ))
 	echo	
-	printf "\n%sTotal:     %s%d.%dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color" 
+	printf "\n%sTotal:     %s%3d.%02dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color" 
 
 	gigs=$((mem_values["used"]/1000000))
 	megs=$(( ( (mem_values["used"]/1000 )% 1000) /10 ))
-	printf "\t%sUsed: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	printf "\t%sUsed: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
 
 	gigs=$((mem_values["avail_for_app"]/1000000))
 	megs=$(( ( (mem_values["avail_for_app"]/1000 )% 1000) /10 ))
-	printf "\n%sAvailable: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
+	printf "\n%sAvailable: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
 
 	gigs=$((mem_values["free"]/1000000))
 	megs=$(( ( (mem_values["free"]/1000 )% 1000) /10 ))
-	printf "\t%sFree: %s%d.%dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	printf "\t%sFree: %s%3d.%02dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
 	
 	local cpu_name=$(awk -F : '/model name/{print $2; exit}' /proc/cpuinfo | sed 's/^ *//' | sed 's/CPU //')
 	echo $s
@@ -374,6 +443,7 @@ visualise-mem(){
 
 
 }
+
 visualise-mem-2(){
 		
 	local perc
@@ -494,20 +564,22 @@ visualise-mem-2(){
 	local gigs=$((mem_values["total"]/1000000))
 	local megs=$(( ( (mem_values["total"]/1000 )% 1000) /10 ))
 	echo	
+	
 	printf "\n%sTotal:     %s%d.%dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color" 
-
+	
 	gigs=$((mem_values["used"]/1000000))
 	megs=$(( ( (mem_values["used"]/1000 )% 1000) /10 ))
-	printf "\t%sUsed: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	printf "\t%sUsed:      %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
 
 	gigs=$((mem_values["avail_for_app"]/1000000))
 	megs=$(( ( (mem_values["avail_for_app"]/1000 )% 1000) /10 ))
-	printf "\n%sAvailable: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
+	#printf "\n%sAvailable: %s%d.%05dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
+	printf "\nAvailable: %d.%02dG" "$gigs" "$megs"   	
 
 	gigs=$((mem_values["free"]/1000000))
 	megs=$(( ( (mem_values["free"]/1000 )% 1000) /10 ))
-	printf "\t%sFree: %s%d.%dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
-	
+	printf "\t%sFree:      %s%d.%dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"
+
 	#Reset Cursor
 	printf '\e8'
 
@@ -543,7 +615,14 @@ print-title(){
 
 
 }
+dummy(){
+	local line ram_speed
+	mapfile -t line < RAM_INFO || exit
+	echo "${line[0]}"
+	echo "Helo $ram_speed"
+}
 main(){
+	dummy
 	print-title "TERMINAL" $foreground_color_1 $background_color_1
 	read-mem
 	read-cpu
