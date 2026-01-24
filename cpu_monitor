@@ -15,6 +15,8 @@ below_80_color=$'\e[38;5;208m'
 below_100_color=$'\e[38;5;196m'
 perc_color=$'\e[38;5;39m'
 cpu_color=$'\e[38;5;199m'
+cpu_clock_color=$'\e[38;5;184m'
+
 reset_color=$'\e[0m'
 dim_color=$'\e[2m'
 bold_color=$'\e[1m'
@@ -63,7 +65,10 @@ read-mem(){
 read-cpu(){
 	local cpu user nice system idle iowait irq softirq steal guest guest_nice
 	local busy # NO NEED FOR IDLE TIME VAR, REUSED idle
-
+	
+	local clocks
+	#VERY IMP < < indicates awk process is getting subbed here
+	mapfile -t clocks < <(awk '/cpu MHz/{print $4}' /proc/cpuinfo)	
 
 	while read -r cpu user nice system idle iowait irq softirq steal guest guest_nice; do
 		
@@ -78,11 +83,15 @@ read-cpu(){
 		# echo "[DEBUG]: idle : $idle iowait: $iowait"
 		idle=$((idle + iowait))
 		#echo "[DEBUG]: idle : $idle"
-		
-		local value="$busy $idle"	
+		#echo "[DEBUG]: ${clocks[$num]}"	
+		local value="$busy $idle ${clocks[$num]}"	
 		cpu_current[$num]=$value	
-
+		
+		
 	done < /proc/stat
+	
+	
+	printf "%s\n" "${clocks[@]}"	
 }
 init_cpu(){
 	local cpu val
@@ -102,16 +111,20 @@ print-bar(){
 	
 	local key=$1
 	local core_offset=$2
-		
+	local temp freq	
 	local busy1 idle1 busy2 idle2
-	read -r busy1 idle1 <<< "${cpu_prev[$key]}"
-	read -r busy2 idle2 <<< "${cpu_current[$key]}"
+	read -r busy1 idle1 temp <<< "${cpu_prev[$key]}"
+	read -r busy2 idle2 freq <<< "${cpu_current[$key]}"
 
 	local busy=$((busy2-busy1))
 	local idle=$((idle2-idle1))
 
 	local total=$((busy + idle))
-
+	freq=${freq%.*}
+	
+	#echo "[DEBUG]: $busy $idle $freq"	
+	local gigs=$((freq/1000))
+	local megs=$(((freq%1000)/10))
 	local usage=$((1000*busy/total))
 
 	local integer=$((usage/10))
@@ -123,8 +136,8 @@ print-bar(){
 
 	local term_lines=${term_size%% *}
 	local term_cols=${term_size##* }
-	
-	local length=$((term_cols-14)) #[] and 100 and % + for cpu and .0 and 2 spaces
+		
+	local length=$((term_cols-20)) #[] and 100 and % + for cpu and .0 and 2 spaces , 4+2 for CPU CLOCK
 	if (($num_cpus>9)); then
 		((length--))
 	fi
@@ -158,7 +171,7 @@ print-bar(){
 
 	printf -v perc '%s%d.%d%%%s' "$perc_color" "$integer" "$float" "$reset_color"
 	s+="$perc"
-	printf -v key '%scpu%d%s' "$cpu_color" "$key" "$reset_color"
+	printf -v key '%scpu%d %s%d.%2dG%s' "$cpu_color" "$key" "$cpu_clock_color" "$gigs" "$megs" "$reset_color"
 
 	{
 	#Save Cursor Locn
