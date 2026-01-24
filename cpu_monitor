@@ -2,6 +2,7 @@
 
 declare cpu_current=()
 declare cpu_prev=()
+declare -A disks=()
 declare -A mem_values=()
 
 
@@ -30,7 +31,6 @@ foreground_color_1=$'\e[38;5;232m'
 
 
 num_cpus=0
-
 copy-data(){
 	cpu_prev=()
 
@@ -61,7 +61,7 @@ read-mem(){
 	done < /proc/meminfo
 	#declare -p mem_values
 }
-#TODO: ADD cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq for cpu_freq
+
 read-cpu(){
 	local cpu user nice system idle iowait irq softirq steal guest guest_nice
 	local busy # NO NEED FOR IDLE TIME VAR, REUSED idle
@@ -80,8 +80,10 @@ read-cpu(){
 
 		local num=${cpu#cpu}
 		busy=$((user + nice + system + irq + softirq + steal + guest + guest_nice))
-		# echo "[DEBUG]: idle : $idle iowait: $iowait"
 		idle=$((idle + iowait))
+		
+
+		# echo "[DEBUG]: idle : $idle iowait: $iowait"
 		#echo "[DEBUG]: idle : $idle"
 		#echo "[DEBUG]: ${clocks[$num]}"	
 		local value="$busy $idle ${clocks[$num]}"	
@@ -89,9 +91,7 @@ read-cpu(){
 		
 		
 	done < /proc/stat
-	
-	
-	printf "%s\n" "${clocks[@]}"	
+		
 }
 init_cpu(){
 	local cpu val
@@ -137,7 +137,7 @@ print-bar(){
 	local term_lines=${term_size%% *}
 	local term_cols=${term_size##* }
 		
-	local length=$((term_cols-20)) #[] and 100 and % + for cpu and .0 and 2 spaces , 4+2 for CPU CLOCK
+	local length=$((term_cols-22)) #[] and 100 and % + for cpu and .0 and 2 spaces , 4+2+2 for CPU CLOCK
 	if (($num_cpus>9)); then
 		((length--))
 	fi
@@ -171,7 +171,7 @@ print-bar(){
 
 	printf -v perc '%s%d.%d%%%s' "$perc_color" "$integer" "$float" "$reset_color"
 	s+="$perc"
-	printf -v key '%scpu%d %s%d.%2dG%s' "$cpu_color" "$key" "$cpu_clock_color" "$gigs" "$megs" "$reset_color"
+	printf -v key '%scpu%d %s%d.%2dGHz%s' "$cpu_color" "$key" "$cpu_clock_color" "$gigs" "$megs" "$reset_color"
 
 	{
 	#Save Cursor Locn
@@ -217,7 +217,7 @@ init_term(){
 	
 	
 	#set scrollable region --> syntax \e[(top);(bottom)r
-	printf '\e[%d;%dr' 0 "$((term_lines-num_cpus-11-8))" # 3 FOR CPU HEADER 3 FOR MEM STATS 2 FOR MEM-BARS 3 FOR MEM HEADER
+	#printf '\e[%d;%dr' 1 1 
 	
 	#restore cursor location
 	printf '\e8'
@@ -225,27 +225,27 @@ init_term(){
 	} >/dev/tty 2>&1
 }
 deinit_term(){
-	local term_size
-	term_size=$(stty size </dev/tty 2>&1) || return
-	local term_lines=${term_size%% *}
+	#local term_size
+	#term_size=$(stty size </dev/tty 2>&1) || return
+	#local term_lines=${term_size%% *}
 	
 	{
 	
 	#save the cursor Locn
-	printf '\e7'
-	for ((i=0;i<num_cpus+6;i++)); do
-		printf '\e[%d;%dH' "$((term_lines-num_cpus-6+i))" 0
-		printf '\e[0K'
-	done
-
-	#RESET SCROLLABLE
-	printf '\e[%d;%dr' 0 "$term_lines"
-
-	
-	#Reset the cursor Locn
-	printf '\e8'
-	
-
+	#printf '\e7'
+	#for ((i=0;i<num_cpus+6;i++)); do
+	#	printf '\e[%d;%dH' "$((term_lines-num_cpus-6+i))" 0
+	#	printf '\e[0K'
+	#done
+#
+#	#RESET SCROLLABLE
+#	printf '\e[%d;%dr' 0 "$term_lines"
+#
+#	
+#	#Reset the cursor Locn
+#	printf '\e8'
+#	
+#
 	#Make cursor visible
 	printf '\e[?25h'
 
@@ -281,7 +281,9 @@ visualise-data(){
 		((core_num++))
 	done	
 }
+
 # INPUT 20 FOR MEM STATS, and X for SWAP STATS
+
 print-mem(){
 	local perc
 
@@ -431,25 +433,28 @@ visualise-mem(){
 	#Print the progress
 	printf "%s %s\n" "$key1" "$bar1">&2
 	printf "%s %s" "$key2" "$bar2">&2
-
-	#PRINT STATS
-	local gigs=$((mem_values["total"]/1000000))
-	local megs=$(( ( (mem_values["total"]/1000 )% 1000) /10 ))
-	echo	
-	printf "\n%sTotal:     %s%3d.%02dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color" 
-
-	gigs=$((mem_values["used"]/1000000))
-	megs=$(( ( (mem_values["used"]/1000 )% 1000) /10 ))
-	printf "\t%sUsed: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
-
-	gigs=$((mem_values["avail_for_app"]/1000000))
-	megs=$(( ( (mem_values["avail_for_app"]/1000 )% 1000) /10 ))
-	printf "\n%sAvailable: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
-
-	gigs=$((mem_values["free"]/1000000))
-	megs=$(( ( (mem_values["free"]/1000 )% 1000) /10 ))
-	printf "\t%sFree: %s%3d.%02dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
 	
+	#PRINT STATS 
+	local gigs=$((mem_values["total"]/1000000)) 
+	local megs=$(( ( (mem_values["total"]/1000 )% 1000) /10 )) 
+	echo
+	printf "\n%sTotal:     %s%3d.%02dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  
+
+	gigs=$((mem_values["used"]/1000000)) 
+	megs=$(( ( (mem_values["used"]/1000 )% 1000) /10 )) 
+	printf "\t%sUsed: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	 
+
+	gigs=$((mem_values["avail_for_app"]/1000000)) 
+	megs=$(( ( (mem_values["avail_for_app"]/1000 )% 1000) /10 )) 
+	printf "\n%sAvailable: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	 
+
+
+	gigs=$((mem_values["free"]/1000000)) 
+	megs=$(( ( (mem_values["free"]/1000 )% 1000) /10 )) 
+	printf "\t%sFree: %s%3d.%02dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	 
+
+
+
 	local cpu_name=$(awk -F : '/model name/{print $2; exit}' /proc/cpuinfo | sed 's/^ *//' | sed 's/CPU //')
 	echo $s
 
@@ -635,15 +640,101 @@ print-title(){
 
 
 }
+read_disk_info(){
+	local disk_name disk_type disk_space
+	
+	local root_disk=$(lsblk -no PKNAME "$(findmnt -n -o SOURCE /)") #FIND BASED ON PKey 
+	
+	if (( ${#disk_info[@]} == 0)); then
+		local i=1
+		local entry
+
+		while read -r disk_type disk_name disk_space is_hard_disk; do
+			
+			entry+="$disk_name -- $disk_space " 
+			if (( $is_hard_disk == 1 ));then
+				entry+="HDD"
+			elif [[ $disk_type == sda* ]]; then 
+				entry+="SSD"
+			else
+				entry+="NVME"
+			fi
+
+
+
+			if [[ $disk_type == "${root_disk}" ]]; then
+				disk_info[0]="${entry}"
+			else
+				disk_info[i++]="${entry}"
+			fi
+		
+		done< <(lsblk -d -n -e7 -o NAME,MODEL,SIZE,ROTA )
+	fi
+
+}
 dummy(){
-	local line ram_speed
-	mapfile -t line < RAM_INFO || exit
-	echo "${line[0]}"
-	echo "Helo $ram_speed"
+	#local disk_cmd="df -h / | tail -n 1" #WONT WORK AS df -h / | tail all gets passed as args of df only
+	local root_disk_size root_disk_used root_disk_avail
+	read -r root_disk_size root_disk_used root_disk_avail < <(df -h / | tail -n 1| awk '{print $2 $3 $4; exit}' | sed 's/G/ /g')
+
+	bar1="$(print-mem $root_disk_avail $root_disk_size 25)"
+	printf -v key1 '%sFree Root Space%s' "$cpu_color" "$reset_color"
+
+
+
+	local home_disk_size home_disk_used home_disk_avail
+	read -r home_disk_size home_disk_used home_disk_avail < <(df -h /home | tail -n 1| awk '{print $2 $3 $4; exit}' | sed 's/G/ /g')
+
+	bar2="$(print-mem $home_disk_avail $home_disk_size 25)"
+	printf -v key2 '%sFree Home Space%s' "$cpu_color" "$reset_color"
+
+	{
+	#Save Cursor Locn
+	printf '\e7'
+
+	#Move Cursor to bottom
+	printf '\e[%d;%dH' "$((LINES-num_cpus-9-7-9))" 0 # 7 for CPU INFO + BUFFER(1) + BOTTOM LINE
+
+	#Clear the Line
+	printf '\e[0K'
+
+	#PRINT THE TITLE
+	print-title "DISK STATS: [ROOT] ${disk_info[0]}" "$foreground_color_1" "$background_color_1"
+	printf '\n'
+	#echo 
+
+	#Print the progress
+	printf "%s %s\n" "$key1" "$bar1">&2
+	printf "%s %s\n" "$key2" "$bar2">&2
+	
+	
+	#PRINT STATS
+	echo	
+	
+	printf "\n%s%-14s%s%dG%s" "$cpu_color" "Total Root: " "$perc_color" "$root_disk_size" "$reset_color" 
+#	printf "\n%sTotal Root: %s%dG%s"  "$cpu_color" "$perc_color" "$root_disk_size" "$reset_color" 
+	printf "\t%sUsed Root: %s%dG%s"  "$cpu_color" "$perc_color" "$root_disk_used" "$reset_color"  	
+	printf "\t%sFree Root: %s%dG%s"  "$cpu_color" "$perc_color" "$root_disk_avail" "$reset_color"  	
+
+	
+	printf "\n%sTotal Home: %s%dG%s"  "$cpu_color" "$perc_color" "$home_disk_size" "$reset_color" 
+	printf "\t%sUsed Home: %s%dG%s"  "$cpu_color" "$perc_color" "$home_disk_used" "$reset_color"  	
+	printf "\t%sFree Home: %s%dG%s"  "$cpu_color" "$perc_color" "$home_disk_avail" "$reset_color"  	
+	
+	echo 
+	#Reset Cursor
+	printf '\e8'
+
+	#reset colour of terminal
+	printf '\e[0m'	
+	} >/dev/tty 2>&1
 }
 main(){
-	dummy
 	print-title "TERMINAL" $foreground_color_1 $background_color_1
+	read_disk_info
+	#declare -p disk_info 
+
+
 	read-mem
 	read-cpu
 	init_cpu
@@ -667,8 +758,10 @@ main(){
 	trap init_term WINCH
 	init_term
 	
-
+	
 	while true; do	
+	
+		dummy
 		copy-data
 		read-cpu
 		read-mem
