@@ -266,9 +266,16 @@ visualise-data(){
 	printf -v now '%(DATE: %Y-%m-%d \t TIME: %H:%M:%S%z)T'
 
 	echo -e  "${dim_color}CPU USAGE ON ${color1}$HOSTNAME ${reset_color}\t ${dim_color}$now ${reset_color}" 
+	local term_size
+	term_size=$(stty size </dev/tty 2>&1) || return
+	local term_lines=${term_size%% *}
 	
+	#if (( $term_lines > 20 )); then
+	#	echo "HELLO"
+	#fi
 	visualise-mem
 	visualise-cache
+	
 	for key in "${!cpu_current[@]}"; do
 		print-bar "$key" "$core_num"
 		((core_num++))
