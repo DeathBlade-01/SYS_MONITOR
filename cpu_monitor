@@ -4,7 +4,8 @@ declare cpu_current=()
 declare cpu_prev=()
 declare -A disks=()
 declare -A mem_values=()
-
+declare -A network_current=()
+declare -A network_previous=()
 
 bar="|"
 empty="."	
@@ -31,7 +32,7 @@ foreground_color_1=$'\e[38;5;232m'
 
 
 num_cpus=0
-copy-data(){
+copy_cpu_data(){
 	cpu_prev=()
 
 	local key value
@@ -277,7 +278,7 @@ visualise-data(){
 		dummy
 		visualise-mem
 		visualise-cache
-		
+		visualise_network 1 #HARDCODED
 		for key in "${!cpu_current[@]}"; do
 			print-bar "$key" "$core_num"
 			((core_num++))
@@ -696,7 +697,7 @@ dummy(){
 	printf '\e7'
 
 	#Move Cursor to bottom
-	printf '\e[%d;%dH' "$((LINES-num_cpus-9-7-9))" 0 # 7 for CPU INFO + BUFFER(1) + BOTTOM LINE
+	printf '\e[%d;%dH' "$((LINES-num_cpus-9-7-8))" 0 # 7 for CPU INFO + BUFFER(1) + BOTTOM LINE
 
 	#Clear the Line
 	printf '\e[0K'
@@ -708,7 +709,7 @@ dummy(){
 
 	#Print the progress
 	printf "%s %s\n" "$key1" "$bar1">&2
-	printf "%s %s\n" "$key2" "$bar2">&2
+	printf "%s %s" "$key2" "$bar2">&2
 	
 	
 	#PRINT STATS
@@ -732,11 +733,114 @@ dummy(){
 	printf '\e[0m'	
 	} >/dev/tty 2>&1
 }
+read_network(){
+	local rec_bytes _ trans_bytes interface values
+	while IFS=: read -r interface values; do 
+		interface=${interface##* }
+		#echo "[DEBUG]: interface: $interface HELLO"		
+		if [[ $interface == lo* || $interface == lxcbr* ]]; then
+			continue 
+		fi
+		
+		local state=$(cat /sys/class/net/$interface/operstate)
+		read -r rec_bytes _ _ _ _ _ _ _ trans_bytes _ <<< "$values"
+		state+=" $rec_bytes $trans_bytes"	
+		network_current[$interface]=$state
+		
+	done < <(tail -n +3 /proc/net/dev)
+		
+}
+copy_network_data(){
+	network_previous=()
+
+	local key value
+
+	for key in "${!network_current[@]}"; do 
+		value=${network_current[$key]}
+		network_previous[$key]=$value
+	done
+}
+
+visualise_network(){
+	
+	local key	
+	local recv_p recv_n trans_p trans_n stat temp
+	local time=$1
+	local up_color=$'\e[38;5;46m'
+	local down_color=$'\e[38;5;196m'
+	local output
+	
+	for key in "${!network_current[@]}"; do 
+		local str	
+		read -r temp recv_p trans_p <<< "${network_previous[$key]}"
+		read -r stat recv_n trans_n <<< "${network_current[$key]}"
+		local recv_rate trans_rate
+		if [[ $stat == down ]]; then
+			recv_rate=0
+			trans_rate=0
+			#printf -v str "%s%s:\t RECV RATE:%d\tTRANSFER RATE:%d%s" 
+			printf -v str "%s%s:\t STATUS: DOWN %s" "$down_color" "$key" "$reset_color"
+		else
+
+			local recv=$((recv_n-recv_p))
+			local trans=$((trans_n-trans_p))
+
+			recv_rate=$(( recv / time))
+			trans_rate=$(( trans/ time))
+			
+			local recv_rate_kilo=$(( recv_rate/1000 ))
+			local recv_rate_bits=$(( (recv_rate%1000)/10 ))
+			
+			local trans_rate_kilo=$((trans_rate/1000))
+			local trans_rate_bits=$(( (trans_rate%1000)/10 ))
+			printf -v str "%s%s:\t RECV RATE:%d.%03d KB/s\tTRANSFER RATE:%d.%03d KB/s%s" "$up_color" "$key" "$recv_rate_kilo" "$recv_rate_bits" "$trans_rate_kilo" "$trans_rate_bits" "$reset_color"
+		fi
+		output+="$str"
+		output+=$'\n'
+	done
+	local term_size
+
+
+	{
+	#Save Cursor Locn
+	printf '\e7'
+
+	#Move Cursor to bottom
+	
+	if (( ${#network_current[@]} > 4 )); then
+		printf '\e[%d;%dH' "$((LINES-num_cpus-9-7-9-7))" 0 #TO COUNTERACT ZERO NUMBERING
+	else
+		printf '\e[%d;%dH' "$((LINES-num_cpus-9-7-9- ${#network_current[@]}- 2 ))" 0 #TO COUNTERACT ZERO NUMBERING
+	fi
+	#PRINT TITLE
+	if (( ${#network_current[@]} > 4 )); then
+		print-title "NETWORK STATS: [TOP5]" "$foreground_color_1" "$background_color_1"
+	else
+		print-title "NETWORK STATS: " "$foreground_color_1" "$background_color_1"
+	fi
+	echo
+	
+	#Clear the Line
+	printf '\e[0K'
+
+	#Print the progress
+	printf "%s" "$output" >&2
+	
+	#Reset Cursor
+	printf '\e8'
+
+	#reset colour of terminal
+	printf '\e[0m'	
+	} >/dev/tty 2>&1
+}
+
+
 main(){
 	print-title "TERMINAL" $foreground_color_1 $background_color_1
 	read_disk_info
 	#declare -p disk_info 
-
+	#read-network
+	#declare -p network_current
 
 	read-mem
 	read-cpu
@@ -765,12 +869,17 @@ main(){
 	
 	while true; do	
 	
-		copy-data
+		copy_cpu_data
+		copy_network_data
 		read-cpu
+		read_network
 		#dummy
 		read-mem
 		visualise-data
+		#declare -p network_previous
+		#declare -p network_current
 		sleep $sleep_delay 
+
 	done
 	
 	
