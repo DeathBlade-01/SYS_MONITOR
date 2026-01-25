@@ -705,7 +705,7 @@ visualise_disk(){
 	read -r home_disk_size home_disk_used home_disk_avail < <(df -h /home | tail -n 1| awk '{print $2 $3 $4; exit}' | sed 's/G/ /g')
 
 	bar2="$(print_bar_chart_generic $home_disk_avail $home_disk_size 25)"
-	printf -v key2 '%sFree Home Space%s' "$cpu_color"  "$reset_color"
+	printf -v key2 '%s%sFree Home Space%s' "$cpu_color" "$bold_color" "$reset_color"
 
 	{
 	#Save Cursor Locn
