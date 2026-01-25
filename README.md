@@ -214,7 +214,16 @@ All colors are defined via 256-color ANSI codes (`\e[38;5;{color}m` for foregrou
 
 ## Usage
 
+Initiall, run the following comand
 ```bash
+./setup
+```
+This command will help in setting up RAM_INFO file, containing a single entry related to the frequency of RAM. **THIS IS VITAL**
+
+Then perform: 
+
+```bash
+
 ./system_monitor.sh -s <update_interval_seconds>
 ```
 
