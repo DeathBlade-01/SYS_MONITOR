@@ -275,15 +275,27 @@ visualise_data(){
 		local term_size
 		term_size=$(stty size </dev/tty 2>&1) || return
 		local term_lines=${term_size%% *}
+		local term_cols=${term_size##* }
 		
 		#if (( $term_lines > 20 )); then
 		#	echo "HELLO"
 		#fi
-		visualise_network 1 #HARDCODED
-		visualise_disk
-		visualise_cache
-		visualise_memory
-		visualise_cpu	
+		if (( $term_cols > 75 && $term_lines > 35)); then
+			visualise_network $1
+		fi
+
+		if (( $term_lines > 30)); then
+			visualise_disk
+		fi
+		if (( $term_lines > 22)); then
+			visualise_cache
+		fi
+		if (( $term_lines > 15)); then
+			visualise_memory
+		fi
+		if (( $term_lines > 7)); then
+			visualise_cpu	
+		fi
 	}> >(cat >/dev/tty 2>&1)
 }
 
@@ -291,6 +303,14 @@ visualise_cpu(){
 
 	local key
 	local core_num=0
+	
+	local cpu_name=$(awk -F : '/model name/{print $2; exit}' /proc/cpuinfo | sed 's/^ *//' | sed 's/CPU //')
+	echo $s
+	
+
+	#Move Cursor to bottom
+	printf '\e[%d;%dH' "$((LINES-num_cpus-1))" 0 #TO COUNTERACT ZERO NUMBERING
+	print-title "CPU STATS: $cpu_name" "$foreground_color_1" "$background_color_1"	
 
 	for key in "${!cpu_current[@]}"; do
 		print_bar_for_cpu "$key" "$core_num"
@@ -380,19 +400,19 @@ visualise_cache(){
 	local gigs=$((mem_values["swap_total"]/1000000))
 	local megs=$(( ( (mem_values["swap_total"]/1000 )% 1000) /10 ))
 	echo	
-	printf "\n%sTotal: %s%3d.%02dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color" 
+	printf "\n%s%-8s%s%3d.%02dG%s"  "$cpu_color" "Total: " "$perc_color" "$gigs" "$megs" "$reset_color" 
 
 	gigs=$((mem_values["swap_used"]/1000000))
 	megs=$(( ( (mem_values["swap_used"]/1000 )% 1000) /10 ))
-	printf "\t\t%sUsed: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	printf "%s%18s%s%3d.%02dG%s" "$cpu_color" "Used: " "$perc_color" "$gigs" "$megs" "$reset_color"  	
 
 	gigs=$((mem_values["swap_cached"]/1000))
 	megs=$(( ( (mem_values["swap_cached"])% 1000)/10 ))
-	printf "\n%sCached: %s%3d.%02dM%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	
+	printf "\n%s%-8s%s%3d.%02dM%s" "$cpu_color" "Cached: " "$perc_color" "$gigs" "$megs" "$reset_color"   	
 
 	gigs=$((mem_values["swap_free"]/1000000))
 	megs=$(( ( (mem_values["swap_free"]/1000 )% 1000) /10 ))
-	printf "\t\t%sFree: %s%3d.%02dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	
+	printf "%s%18s%s%3d.%02dG%s\n" "$cpu_color" "Free: "  "$perc_color" "$gigs" "$megs" "$reset_color"  	
 	
 	echo $s
 
@@ -446,33 +466,29 @@ visualise_memory(){
 
 	#Print the progress
 	printf "%s %s\n" "$key1" "$bar1">&2
-	printf "%s %s" "$key2" "$bar2">&2
+	printf "%s %s\n" "$key2" "$bar2">&2
 	
 	#PRINT STATS 
 	local gigs=$((mem_values["total"]/1000000)) 
 	local megs=$(( ( (mem_values["total"]/1000 )% 1000) /10 )) 
 	echo
-	printf "\n%sTotal:     %s%3d.%02dG%s"  "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  
+	printf "%s%-12s%s%3d.%02dG%s"  "$cpu_color" "Total: " "$perc_color" "$gigs" "$megs" "$reset_color"  
 
 	gigs=$((mem_values["used"]/1000000)) 
 	megs=$(( ( (mem_values["used"]/1000 )% 1000) /10 )) 
-	printf "\t%sUsed: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	 
+	printf "%s%18s%s%3d.%02dG%s" "$cpu_color" "Used: " "$perc_color" "$gigs" "$megs" "$reset_color"  	 
 
 	gigs=$((mem_values["avail_for_app"]/1000000)) 
 	megs=$(( ( (mem_values["avail_for_app"]/1000 )% 1000) /10 )) 
-	printf "\n%sAvailable: %s%3d.%02dG%s" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"   	 
+	printf "\n%s%-12s%s%3d.%02dG%s" "$cpu_color" "Available: " "$perc_color" "$gigs" "$megs" "$reset_color"   	 
 
 
 	gigs=$((mem_values["free"]/1000000)) 
 	megs=$(( ( (mem_values["free"]/1000 )% 1000) /10 )) 
-	printf "\t%sFree: %s%3d.%02dG%s\n" "$cpu_color" "$perc_color" "$gigs" "$megs" "$reset_color"  	 
+	printf "%s%18s%s%3d.%02dG%s\n" "$cpu_color" "Free: " "$perc_color" "$gigs" "$megs" "$reset_color"  	 
 
 
 
-	local cpu_name=$(awk -F : '/model name/{print $2; exit}' /proc/cpuinfo | sed 's/^ *//' | sed 's/CPU //')
-	echo $s
-
-	print-title "CPU STATS: $cpu_name" "$foreground_color_1" "$background_color_1"	
 	#Reset Cursor
 	printf '\e8'
 
@@ -727,15 +743,15 @@ visualise_disk(){
 	#PRINT STATS
 	echo	
 	
-	printf "\n%s%-14s%s%dG%s" "$cpu_color" "Total Root: " "$perc_color" "$root_disk_size" "$reset_color" 
+	printf "\n%s%-8s%s%dG%s" "$cpu_color" "Total Root: " "$perc_color" "$root_disk_size" "$reset_color" 
 #	printf "\n%sTotal Root: %s%dG%s"  "$cpu_color" "$perc_color" "$root_disk_size" "$reset_color" 
-	printf "\t%sUsed Root: %s%dG%s"  "$cpu_color" "$perc_color" "$root_disk_used" "$reset_color"  	
-	printf "\t%sFree Root: %s%dG%s"  "$cpu_color" "$perc_color" "$root_disk_avail" "$reset_color"  	
+	printf "%17s%-8s%s%dG%s"  "$cpu_color" "Used Root: " "$perc_color" "$root_disk_used" "$reset_color"  	
+	printf "%17s%-8s%s%dG%s"  "$cpu_color" "Free Root: " "$perc_color" "$root_disk_avail" "$reset_color"  	
 
 	
-	printf "\n%sTotal Home: %s%dG%s"  "$cpu_color" "$perc_color" "$home_disk_size" "$reset_color" 
-	printf "\t%sUsed Home: %s%dG%s"  "$cpu_color" "$perc_color" "$home_disk_used" "$reset_color"  	
-	printf "\t%sFree Home: %s%dG%s"  "$cpu_color" "$perc_color" "$home_disk_avail" "$reset_color"  	
+	printf "\n%s%-8s%s%dG%s"  "$cpu_color" "Total Home: " "$perc_color" "$home_disk_size" "$reset_color" 
+	printf "%17s%-8s%s%dG%s"  "$cpu_color" "Used Home: " "$perc_color" "$home_disk_used" "$reset_color"  	
+	printf "%17s%-8s%s%dG%s"  "$cpu_color" "Free Home: " "$perc_color" "$home_disk_avail" "$reset_color"  	
 	
 	echo 
 	#Reset Cursor
@@ -815,10 +831,11 @@ visualise_network(){
 			
 			local trans_rate_kilo=$((trans_rate/1000))
 			local trans_rate_bits=$(( (trans_rate%1000)/10 ))
-			if [[ $key =~ ^wl ]]; then
-				grep "^${key}:" /proc/net/wireless
-			fi
+			#if [[ $key =~ ^wl ]]; then
+			#	grep "^${key}:" /proc/net/wireless
+			#fi
 			printf -v str "%s%s%-7s%s%s: RECV RATE:%d.%03d KB/s     TRANSFER RATE:%d.%03d KB/s%s" "$up_color" "$prefix" "$up_color"  "$key" "$up_color" "$recv_rate_kilo" "$recv_rate_bits" "$trans_rate_kilo" "$trans_rate_bits" "$reset_color"
+
 		fi
 		output+="$str"
 		output+=$'\n'
@@ -859,26 +876,32 @@ visualise_network(){
 	} >/dev/tty 2>&1
 }
 
+copy_and_read_data(){
+	copy_cpu_data
+	copy_network_data
+
+	read_cpu
+	read_network
+	read_mem_and_cache
+}
 
 main(){
 	print-title "TERMINAL" $foreground_color_1 $background_color_1
-	read_disk_info
 	#declare -p disk_info 
 	#read-network
 	#declare -p network_current
 
-	read_mem_and_cache
 	read_cpu
 	init_cpu
+
 	local sleep_delay
 	#echo "${bold_color}[DEBUG:] Waiting for Data${reset_color}" >&2
 	local OPTIND OPTARG opt
 
 
-	while getopts 's:d' opt; do
+	while getopts 's:' opt; do
 		case "$opt" in
 			s) sleep_delay=$OPTARG;;
-			d) print_disk_details
 		esac
 	done
 	shopt -s checkwinsize
@@ -894,13 +917,8 @@ main(){
 	
 	while true; do	
 	
-		copy_cpu_data
-		copy_network_data
-		read_cpu
-		read_network
-		#visualise_disk
-		read_mem_and_cache
-		visualise_data
+		copy_and_read_data
+		visualise_data $sleep_delay
 		#declare -p network_previous
 		#declare -p network_current
 		sleep $sleep_delay 
