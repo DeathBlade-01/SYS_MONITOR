@@ -5,6 +5,7 @@ A real-time terminal-based system monitoring tool written in pure Bash that prov
 ## Overview
 
 This system monitor leverages Linux's `/proc` filesystem and system utilities to gather and display live performance metrics in a color-coded, interactive terminal interface. The tool uses ANSI escape sequences for advanced terminal control, enabling a responsive dashboard that updates in real-time while maintaining minimal system overhead.
+[SS_1.png]
 
 ## Technical Architecture
 
@@ -144,8 +145,6 @@ Bar length = (usage_percentage × available_width) / 100
 ```
 
 Each bar dynamically scales to terminal width while preserving space for labels and percentages.
-
-For a more Detailed analysis of the code, click here... 👉 [Detailed Code Review](CODE_REVIEW.md)
 
 ### Data Flow Architecture
 
