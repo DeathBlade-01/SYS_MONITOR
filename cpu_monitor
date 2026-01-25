@@ -10,11 +10,13 @@ declare -A network_previous=()
 bar="|"
 empty="."	
 
-below_20_color=$'\e[38;5;42m'
-below_40_color=$'\e[38;5;119m'
-below_60_color=$'\e[38;5;227m'
-below_80_color=$'\e[38;5;208m'
-below_100_color=$'\e[38;5;196m'
+danger_color=$'\e[38;5;42m'
+semi_danger_color=$'\e[38;5;119m'
+okay_color=$'\e[38;5;227m'
+safe_color=$'\e[38;5;208m'
+very_safe_color=$'\e[38;5;196m'
+
+
 perc_color=$'\e[38;5;39m'
 cpu_color=$'\e[38;5;199m'
 cpu_clock_color=$'\e[38;5;184m'
@@ -22,6 +24,7 @@ cpu_clock_color=$'\e[38;5;184m'
 reset_color=$'\e[0m'
 dim_color=$'\e[2m'
 bold_color=$'\e[1m'
+
 color1=$'\e[38;5;34m'
 
 background_color_1=$'\e[48;5;24m'
@@ -31,7 +34,7 @@ background_color_3=$'\e[48;5;177m'
 foreground_color_1=$'\e[38;5;232m'
 
 
-num_cpus=0
+declare num_cpus=0
 copy_cpu_data(){
 	cpu_prev=()
 
@@ -43,7 +46,7 @@ copy_cpu_data(){
 	done
 }
 
-read-mem(){
+read_mem_and_cache(){
 	local total free avail_for_app buffers cache swap_cached 
 	local key value_raw value rest
 	while IFS=: read -r key value_raw; do 
@@ -63,11 +66,12 @@ read-mem(){
 	#declare -p mem_values
 }
 
-read-cpu(){
+read_cpu(){
 	local cpu user nice system idle iowait irq softirq steal guest guest_nice
 	local busy # NO NEED FOR IDLE TIME VAR, REUSED idle
 	
 	local clocks
+
 	#VERY IMP < < indicates awk process is getting subbed here
 	mapfile -t clocks < <(awk '/cpu MHz/{print $4}' /proc/cpuinfo)	
 
@@ -108,7 +112,7 @@ init_cpu(){
 }
 
 
-print-bar(){
+print_bar_for_cpu(){
 	
 	local key=$1
 	local core_offset=$2
@@ -150,15 +154,15 @@ print-bar(){
 	local color_choosen
 
 	if (( $integer<20 )); then
-		color_choosen=$below_20_color
+		color_choosen=$danger_color
 	elif (( $integer<40)); then
-		color_choosen=$below_40_color
+		color_choosen=$semi_danger_color
 	elif (( $integer<60)); then
-		color_choosen=$below_60_color
+		color_choosen=$okay_color
 	elif (( $integer<80)); then
-		color_choosen=$below_80_color
+		color_choosen=$safe_color
 	else
-		color_choosen=$below_100_color
+		color_choosen=$very_safe_color
 	fi
 	for(( i=0;i<num_bars;i++)); do
 		s+=$bar
@@ -194,6 +198,7 @@ print-bar(){
 	printf '\e[0m'	
 	} >/dev/tty 2>&1
 }
+
 init_term(){
 	
 	local term_size
@@ -225,6 +230,7 @@ init_term(){
 	
 	} >/dev/tty 2>&1
 }
+
 deinit_term(){
 	#local term_size
 	#term_size=$(stty size </dev/tty 2>&1) || return
@@ -256,10 +262,8 @@ deinit_term(){
 
 	} >/dev/tty 2>&1
 }
-visualise-data(){
-	local key
-	local core_num=0
-
+visualise_data(){
+	
 	#move to the top
 	printf '\e[0;0H'	
 
@@ -275,20 +279,26 @@ visualise-data(){
 		#if (( $term_lines > 20 )); then
 		#	echo "HELLO"
 		#fi
-		dummy
-		visualise-mem
-		visualise-cache
 		visualise_network 1 #HARDCODED
-		for key in "${!cpu_current[@]}"; do
-			print-bar "$key" "$core_num"
-			((core_num++))
-		done	
+		visualise_disk
+		visualise_cache
+		visualise_memory
+		visualise_cpu	
 	}> >(cat >/dev/tty 2>&1)
 }
 
-# INPUT 20 FOR MEM STATS, and X for SWAP STATS
+visualise_cpu(){
 
-print-mem(){
+	local key
+	local core_num=0
+
+	for key in "${!cpu_current[@]}"; do
+		print_bar_for_cpu "$key" "$core_num"
+		((core_num++))
+	done	
+}
+# INPUT 20 FOR MEM STATS, and X for SWAP STATS
+print_bar_chart_generic(){
 	local perc
 
 	local available_memory=$1
@@ -314,15 +324,15 @@ print-mem(){
 	local color_choosen
 
 	if (( $integer<20 )); then
-		color_choosen=$below_100_color
+		color_choosen=$very_safe_color
 	elif (( $integer<40)); then
-		color_choosen=$below_80_color
+		color_choosen=$safe_color
 	elif (( $integer<60)); then
-		color_choosen=$below_60_color
+		color_choosen=$okay_color
 	elif (( $integer<80)); then
-		color_choosen=$below_40_color
+		color_choosen=$semi_danger_color
 	else
-		color_choosen=$below_20_color
+		color_choosen=$danger_color
 	fi
 	for(( i=0;i<num_bars;i++)); do
 		s+=$bar
@@ -338,13 +348,13 @@ print-mem(){
 	s+="$perc"
 	echo "$s"
 }
-visualise-cache(){
+visualise_cache(){
 	
 	local available_memory=$((mem_values["swap_free"]))
 	local total_memory=$((mem_values["swap_total"]))
 	local key1 bar1 key2 bar2
 	
-	bar1="$(print-mem $available_memory $total_memory 24)"
+	bar1="$(print_bar_chart_generic $available_memory $total_memory 24)"
 	printf -v key1 '%sAvailable Swap%s' "$cpu_color" "$reset_color"
 	mem_values["swap_used"]=$((mem_values["swap_total"] - mem_values["swap_free"]))
 
@@ -395,13 +405,13 @@ visualise-cache(){
 
 
 }
-visualise-mem(){
+visualise_memory(){
 	
 	local available_memory=$((mem_values["avail_for_app"]))
 	local total_memory=$((mem_values["total"]))
 	local key1 bar1 key2 bar2
 	
-	bar1="$(print-mem $available_memory $total_memory 19)"
+	bar1="$(print_bar_chart_generic $available_memory $total_memory 19)"
 	printf -v key1 '%sAvailable%s' "$cpu_color" "$reset_color"
 
 
@@ -411,7 +421,7 @@ visualise-mem(){
 	total_memory=$((mem_values["avail_for_app"]))
 	mem_values["used"]=$((mem_values["total"] - mem_values["avail_for_app"]))
 
-	bar2="$(print-mem $available_memory $total_memory 19)"
+	bar2="$(print_bar_chart_generic $available_memory $total_memory 19)"
 
 	printf -v key2 '%sFree     %s' "$cpu_color" "$reset_color"
 
@@ -473,7 +483,8 @@ visualise-mem(){
 
 }
 
-visualise-mem-2(){
+#OLD DEPRACATED METHOD
+visualise_memory-2(){
 		
 	local perc
 
@@ -500,15 +511,15 @@ visualise-mem-2(){
 	local color_choosen
 
 	if (( $integer<20 )); then
-		color_choosen=$below_20_color
+		color_choosen=$danger_color
 	elif (( $integer<40)); then
-		color_choosen=$below_40_color
+		color_choosen=$semi_danger_color
 	elif (( $integer<60)); then
-		color_choosen=$below_60_color
+		color_choosen=$okay_color
 	elif (( $integer<80)); then
-		color_choosen=$below_80_color
+		color_choosen=$safe_color
 	else
-		color_choosen=$below_100_color
+		color_choosen=$very_safe_color
 	fi
 	for(( i=0;i<num_bars;i++)); do
 		bar1+=$bar
@@ -547,15 +558,15 @@ visualise-mem-2(){
 	
 
 	if (( $integer<20 )); then
-		color_choosen=$below_100_color
+		color_choosen=$very_safe_color
 	elif (( $integer<40)); then
-		color_choosen=$below_80_color
+		color_choosen=$safe_color
 	elif (( $integer<60)); then
-		color_choosen=$below_60_color
+		color_choosen=$okay_color
 	elif (( $integer<80)); then
-		color_choosen=$below_40_color
+		color_choosen=$semi_danger_color
 	else
-		color_choosen=$below_20_color
+		color_choosen=$danger_color
 	fi
 	for(( i=0;i<num_bars;i++)); do
 		bar2+=$bar
@@ -617,6 +628,7 @@ visualise-mem-2(){
 	} >/dev/tty 2>&1
 
 }
+
 print-title(){
 	local bg_color=$3
 	local font_color=$2
@@ -676,12 +688,12 @@ read_disk_info(){
 	fi
 
 }
-dummy(){
+visualise_disk(){
 	#local disk_cmd="df -h / | tail -n 1" #WONT WORK AS df -h / | tail all gets passed as args of df only
 	local root_disk_size root_disk_used root_disk_avail
 	read -r root_disk_size root_disk_used root_disk_avail < <(df -h / | tail -n 1| awk '{print $2 $3 $4; exit}' | sed 's/G/ /g')
 
-	bar1="$(print-mem $root_disk_avail $root_disk_size 25)"
+	bar1="$(print_bar_chart_generic $root_disk_avail $root_disk_size 25)"
 	printf -v key1 '%sFree Root Space%s' "$cpu_color" "$reset_color"
 
 
@@ -689,7 +701,7 @@ dummy(){
 	local home_disk_size home_disk_used home_disk_avail
 	read -r home_disk_size home_disk_used home_disk_avail < <(df -h /home | tail -n 1| awk '{print $2 $3 $4; exit}' | sed 's/G/ /g')
 
-	bar2="$(print-mem $home_disk_avail $home_disk_size 25)"
+	bar2="$(print_bar_chart_generic $home_disk_avail $home_disk_size 25)"
 	printf -v key2 '%sFree Home Space%s' "$cpu_color" "$reset_color"
 
 	{
@@ -775,11 +787,21 @@ visualise_network(){
 		read -r temp recv_p trans_p <<< "${network_previous[$key]}"
 		read -r stat recv_n trans_n <<< "${network_current[$key]}"
 		local recv_rate trans_rate
+		local prefix
+
+		if [[ $key =~ ^wl ]]; then 
+			printf -v prefix "%s%-10s %s" "$bold_color" "[WIFI]" "$reset_color" 
+		elif [[ $key =~ ^enp ]]; then 
+			printf -v prefix "%s%-10s %s" "$bold_color" "[ETHERNET]" "$reset_color" 
+		else
+			:	
+		fi
+
 		if [[ $stat == down ]]; then
 			recv_rate=0
 			trans_rate=0
 			#printf -v str "%s%s:\t RECV RATE:%d\tTRANSFER RATE:%d%s" 
-			printf -v str "%s%s:\t STATUS: DOWN %s" "$down_color" "$key" "$reset_color"
+			printf -v str "%s%s%-7s%s%s: STATUS: DOWN %s" "$down_color" "$prefix" "$down_color" "$key" "$down_color" "$reset_color"
 		else
 
 			local recv=$((recv_n-recv_p))
@@ -793,7 +815,10 @@ visualise_network(){
 			
 			local trans_rate_kilo=$((trans_rate/1000))
 			local trans_rate_bits=$(( (trans_rate%1000)/10 ))
-			printf -v str "%s%s:\t RECV RATE:%d.%03d KB/s\tTRANSFER RATE:%d.%03d KB/s%s" "$up_color" "$key" "$recv_rate_kilo" "$recv_rate_bits" "$trans_rate_kilo" "$trans_rate_bits" "$reset_color"
+			if [[ $key =~ ^wl ]]; then
+				grep "^${key}:" /proc/net/wireless
+			fi
+			printf -v str "%s%s%-7s%s%s: RECV RATE:%d.%03d KB/s     TRANSFER RATE:%d.%03d KB/s%s" "$up_color" "$prefix" "$up_color"  "$key" "$up_color" "$recv_rate_kilo" "$recv_rate_bits" "$trans_rate_kilo" "$trans_rate_bits" "$reset_color"
 		fi
 		output+="$str"
 		output+=$'\n'
@@ -842,8 +867,8 @@ main(){
 	#read-network
 	#declare -p network_current
 
-	read-mem
-	read-cpu
+	read_mem_and_cache
+	read_cpu
 	init_cpu
 	local sleep_delay
 	#echo "${bold_color}[DEBUG:] Waiting for Data${reset_color}" >&2
@@ -871,11 +896,11 @@ main(){
 	
 		copy_cpu_data
 		copy_network_data
-		read-cpu
+		read_cpu
 		read_network
-		#dummy
-		read-mem
-		visualise-data
+		#visualise_disk
+		read_mem_and_cache
+		visualise_data
 		#declare -p network_previous
 		#declare -p network_current
 		sleep $sleep_delay 
