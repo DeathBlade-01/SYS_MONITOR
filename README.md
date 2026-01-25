@@ -145,6 +145,8 @@ Bar length = (usage_percentage × available_width) / 100
 
 Each bar dynamically scales to terminal width while preserving space for labels and percentages.
 
+For a more Detailed analysis of the code, click here... 👉 [Detailed Code Review](CODE_REVIEW.md)
+
 ### Data Flow Architecture
 
 ```
