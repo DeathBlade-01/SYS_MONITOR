@@ -263,23 +263,26 @@ visualise-data(){
 	printf '\e[0;0H'	
 
 	local now
-	printf -v now '%(DATE: %Y-%m-%d \t TIME: %H:%M:%S%z)T'
+	{
+		printf -v now '%(DATE: %Y-%m-%d \t TIME: %H:%M:%S%z)T'
 
-	echo -e  "${dim_color}CPU USAGE ON ${color1}$HOSTNAME ${reset_color}\t ${dim_color}$now ${reset_color}" 
-	local term_size
-	term_size=$(stty size </dev/tty 2>&1) || return
-	local term_lines=${term_size%% *}
-	
-	#if (( $term_lines > 20 )); then
-	#	echo "HELLO"
-	#fi
-	visualise-mem
-	visualise-cache
-	
-	for key in "${!cpu_current[@]}"; do
-		print-bar "$key" "$core_num"
-		((core_num++))
-	done	
+		echo -e  "${dim_color}CPU USAGE ON ${color1}$HOSTNAME ${reset_color}\t ${dim_color}$now ${reset_color}" 
+		local term_size
+		term_size=$(stty size </dev/tty 2>&1) || return
+		local term_lines=${term_size%% *}
+		
+		#if (( $term_lines > 20 )); then
+		#	echo "HELLO"
+		#fi
+		dummy
+		visualise-mem
+		visualise-cache
+		
+		for key in "${!cpu_current[@]}"; do
+			print-bar "$key" "$core_num"
+			((core_num++))
+		done	
+	}> >(cat >/dev/tty 2>&1)
 }
 
 # INPUT 20 FOR MEM STATS, and X for SWAP STATS
@@ -743,9 +746,10 @@ main(){
 	local OPTIND OPTARG opt
 
 
-	while getopts 's:' opt; do
+	while getopts 's:d' opt; do
 		case "$opt" in
 			s) sleep_delay=$OPTARG;;
+			d) print_disk_details
 		esac
 	done
 	shopt -s checkwinsize
@@ -761,9 +765,9 @@ main(){
 	
 	while true; do	
 	
-		dummy
 		copy-data
 		read-cpu
+		#dummy
 		read-mem
 		visualise-data
 		sleep $sleep_delay 
